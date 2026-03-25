@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FSE 100 — EV3 Robot Maze Builder</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --bg:#0a0f1a;--panel:rgba(15,22,40,0.92);--accent:#00e5a0;--accent2:#00b8ff;
+  --accent3:#ff6b35;--text:#e8ecf4;--text-dim:#7a8ba8;--border:rgba(0,229,160,0.15);
+  --glow:0 0 20px rgba(0,229,160,0.3);
+}
+body{font-family:'Fredoka',sans-serif;background:var(--bg);color:var(--text);overflow:hidden;width:100vw;height:100vh;cursor:grab;}
+body.dragging{cursor:grabbing;}
+#canvas-container{position:fixed;top:0;left:0;width:100%;height:100%;z-index:1;}
+canvas{display:block;}
+
+.top-bar{position:fixed;top:0;left:0;right:0;height:54px;background:var(--panel);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;z-index:100;}
+.top-bar .logo{display:flex;align-items:center;gap:10px;}
+.logo-icon{width:30px;height:30px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;}
+.logo-text{font-weight:700;font-size:15px;letter-spacing:.5px;}
+.logo-text span{color:var(--accent);}
+.nav{display:flex;gap:6px;}
+.nav-btn{background:none;border:1px solid transparent;color:var(--text-dim);padding:5px 12px;border-radius:8px;font-family:'Fredoka',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:all .2s;}
+.nav-btn:hover,.nav-btn.active{color:var(--accent);border-color:var(--border);background:rgba(0,229,160,0.05);}
+
+.side-panel{position:fixed;right:0;top:54px;width:340px;height:calc(100vh - 54px);background:var(--panel);backdrop-filter:blur(20px);border-left:1px solid var(--border);z-index:90;overflow-y:auto;padding:16px;transform:translateX(0);transition:transform .4s cubic-bezier(.16,1,.3,1);}
+.side-panel.hidden{transform:translateX(100%);}
+.side-panel::-webkit-scrollbar{width:4px;}
+.side-panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+
+.panel-section{margin-bottom:18px;}
+.panel-section h3{font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.panel-section h3::before{content:'';width:3px;height:13px;background:var(--accent);border-radius:2px;}
+
+.lego-stack{display:flex;flex-direction:column-reverse;align-items:center;gap:2px;padding:12px;background:rgba(0,0,0,.3);border-radius:10px;border:1px solid var(--border);min-height:180px;position:relative;}
+.lego-piece{width:100%;max-width:170px;padding:7px 12px;border-radius:5px;text-align:center;font-size:10px;font-weight:600;font-family:'JetBrains Mono',monospace;animation:stackIn .5s cubic-bezier(.16,1,.3,1) forwards;opacity:0;transform:translateY(-30px);position:relative;}
+.lego-piece::before,.lego-piece::after{content:'';position:absolute;top:-4px;width:9px;height:5px;background:inherit;border-radius:3px 3px 0 0;filter:brightness(.85);}
+.lego-piece::before{left:25%;}.lego-piece::after{right:25%;}
+@keyframes stackIn{to{opacity:1;transform:translateY(0);}}
+
+.build-btn{width:100%;padding:10px;border:1px solid var(--accent);background:rgba(0,229,160,.1);color:var(--accent);border-radius:8px;font-family:'Fredoka',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:all .2s;margin-top:8px;}
+.build-btn:hover{background:rgba(0,229,160,.2);box-shadow:var(--glow);}
+.build-btn:disabled{opacity:.4;cursor:default;}
+.reset-btn{width:100%;padding:8px;border:1px solid rgba(255,107,53,.3);background:rgba(255,107,53,.08);color:var(--accent3);border-radius:8px;font-family:'Fredoka',sans-serif;font-size:11px;font-weight:500;cursor:pointer;transition:all .2s;margin-top:6px;}
+.reset-btn:hover{background:rgba(255,107,53,.15);}
+.step-indicator{text-align:center;font-size:10px;color:var(--text-dim);margin-top:6px;font-family:'JetBrains Mono',monospace;}
+
+.motor-card{background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:10px;padding:11px;margin-bottom:8px;transition:all .25s;cursor:pointer;position:relative;}
+.motor-card:hover{border-color:var(--accent2);box-shadow:0 0 15px rgba(0,184,255,.15);transform:translateX(-3px);}
+.motor-card.selected{border-color:var(--accent2);background:rgba(0,184,255,.08);}
+.motor-card h4{font-size:12px;font-weight:600;color:var(--accent2);margin-bottom:4px;}
+.motor-card p{font-size:10px;color:var(--text-dim);line-height:1.5;}
+.motor-spec{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;}
+.spec-tag{font-size:9px;font-family:'JetBrains Mono',monospace;padding:2px 6px;border-radius:4px;background:rgba(0,184,255,.1);color:var(--accent2);border:1px solid rgba(0,184,255,.2);}
+.motor-card .click-hint{position:absolute;top:11px;right:11px;font-size:9px;color:var(--accent2);opacity:.6;font-family:'JetBrains Mono',monospace;}
+
+.info-card{background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:10px;padding:11px;margin-bottom:8px;}
+.info-card h4{font-size:11px;font-weight:600;margin-bottom:4px;}
+.info-card p{font-size:10px;color:var(--text-dim);line-height:1.6;}
+
+/* Bottom Controls */
+.bottom-controls{position:fixed;bottom:16px;left:50%;transform:translateX(calc(-50% - 170px));display:flex;gap:5px;z-index:100;background:var(--panel);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:14px;padding:6px 10px;align-items:center;}
+.ctrl-btn{width:38px;height:38px;border-radius:8px;border:1px solid var(--border);background:rgba(0,0,0,.3);color:var(--text);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;}
+.ctrl-btn:hover{border-color:var(--accent);background:rgba(0,229,160,.1);color:var(--accent);}
+.ctrl-btn.active{background:rgba(0,229,160,.15);border-color:var(--accent);color:var(--accent);}
+.ctrl-btn.fpv{border-color:rgba(0,184,255,.3);}
+.ctrl-btn.fpv.active{background:rgba(0,184,255,.15);border-color:var(--accent2);color:var(--accent2);}
+.ctrl-divider{width:1px;height:24px;background:var(--border);margin:0 4px;}
+
+/* Mode Toggle */
+.mode-toggle{position:fixed;bottom:16px;left:50%;transform:translateX(calc(-50% + 100px));z-index:100;background:var(--panel);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:14px;padding:6px 8px;display:flex;gap:4px;}
+.mode-btn{padding:7px 16px;border:1px solid transparent;border-radius:8px;font-family:'Fredoka',sans-serif;font-size:12px;font-weight:600;cursor:pointer;background:none;color:var(--text-dim);transition:all .2s;}
+.mode-btn.active-auto{color:var(--accent);border-color:var(--accent);background:rgba(0,229,160,.1);}
+.mode-btn.active-manual{color:var(--accent3);border-color:var(--accent3);background:rgba(255,107,53,.1);}
+
+/* HUD */
+.maze-hud{position:fixed;bottom:16px;left:16px;z-index:100;background:var(--panel);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:10px;padding:10px 14px;}
+.maze-hud .hud-label{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text-dim);margin-bottom:2px;}
+.maze-hud .hud-value{font-size:14px;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--accent);}
+.hud-row{display:flex;gap:16px;}
+
+/* Editor HUD */
+.editor-hud{position:fixed;top:64px;left:16px;z-index:100;background:var(--panel);backdrop-filter:blur(20px);border:1px solid rgba(255,107,53,.3);border-radius:10px;padding:12px 16px;transition:opacity .3s;max-width:260px;}
+.editor-hud h4{font-size:12px;font-weight:600;color:var(--accent3);margin-bottom:6px;}
+.editor-hud p{font-size:10px;color:var(--text-dim);line-height:1.6;}
+.editor-hud kbd{background:rgba(255,255,255,.1);padding:1px 6px;border-radius:3px;font-family:'JetBrains Mono',monospace;font-size:10px;border:1px solid rgba(255,255,255,.15);}
+
+/* Loading */
+.loading-screen{position:fixed;inset:0;background:var(--bg);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .6s,visibility .6s;}
+.loading-screen.hidden{opacity:0;visibility:hidden;}
+.loading-title{font-size:34px;font-weight:700;margin-bottom:6px;}
+.loading-title span{color:var(--accent);}
+.loading-sub{color:var(--text-dim);font-size:13px;margin-bottom:28px;}
+.loading-bar{width:220px;height:4px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden;}
+.loading-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;width:0%;animation:loadFill 2s ease-out forwards;}
+@keyframes loadFill{to{width:100%;}}
+
+.toggle-panel-btn{position:fixed;right:14px;top:64px;z-index:95;width:34px;height:34px;border-radius:7px;border:1px solid var(--border);background:var(--panel);backdrop-filter:blur(20px);color:var(--text);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;}
+.toggle-panel-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+.motor-demo-label{position:fixed;bottom:70px;left:50%;transform:translateX(calc(-50% - 170px));z-index:99;background:var(--panel);backdrop-filter:blur(20px);border:1px solid rgba(0,184,255,.3);border-radius:10px;padding:8px 16px;font-size:11px;color:var(--accent2);font-weight:500;transition:opacity .3s;pointer-events:none;text-align:center;max-width:480px;}
+</style>
+</head>
+<body>
+
+<div class="loading-screen" id="loadingScreen">
+  <div class="loading-title">ASU <span>FSE 100</span></div>
+  <div class="loading-sub">EV3 Robot Maze Experience — Loading 3D Environment</div>
+  <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+</div>
+
+<div class="top-bar">
+  <div class="logo"><div class="logo-icon">⚡</div><div class="logo-text">FSE 100 — <span>EV3 Robot Maze</span></div></div>
+  <div class="nav">
+    <button class="nav-btn active" onclick="showPanel('build')">🧱 Build</button>
+    <button class="nav-btn" onclick="showPanel('motors')">⚙️ Motors</button>
+    <button class="nav-btn" onclick="showPanel('learn')">📘 Learn</button>
+    <button class="nav-btn" onclick="togglePanel()">✕</button>
+  </div>
+</div>
+
+<button class="toggle-panel-btn" id="toggleBtn" onclick="togglePanel()" style="display:none;">☰</button>
+
+<!-- Editor HUD (manual mode only) -->
+<div class="editor-hud" id="editorHud" style="opacity:0;pointer-events:none;">
+  <h4>🔧 Maze Editor Mode</h4>
+  <p>
+    <kbd>Click</kbd> on the maze floor to place a wall<br>
+    <kbd>Right-click</kbd> a wall to remove it<br>
+    <kbd>R</kbd> to recalculate robot path<br>
+    <kbd>C</kbd> to clear all custom walls<br>
+    <kbd>Hold Middle-click</kbd> or <kbd>Ctrl+Drag</kbd> to orbit camera
+  </p>
+</div>
+
+<div class="side-panel" id="sidePanel">
+  <!-- BUILD TAB -->
+  <div id="tab-build">
+    <div class="panel-section">
+      <h3>LEGO EV3 Robot Builder</h3>
+      <p style="font-size:10px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">Click to add each piece — watch the 3D robot build next to the maze!</p>
+      <div class="lego-stack" id="legoStack"><div style="color:var(--text-dim);font-size:10px;position:absolute;top:50%;transform:translateY(-50%);text-align:center;padding:0 8px;">Press "Add Next Piece" to start</div></div>
+      <div class="step-indicator" id="stepIndicator">Step 0 / 8</div>
+      <button class="build-btn" id="buildBtn" onclick="addLegoPiece()">🧱 Add Next Piece</button>
+      <button class="reset-btn" onclick="resetBuild()">↺ Reset Build</button>
+    </div>
+  </div>
+  <!-- MOTORS TAB -->
+  <div id="tab-motors" style="display:none;">
+    <div class="panel-section">
+      <h3>EV3 Motors & Sensors</h3>
+      <p style="font-size:10px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">Click any component to see a live 3D demo.</p>
+      <div class="motor-card" onclick="selectMotor(0)" id="motor-0"><span class="click-hint">▸ demo</span><h4>🔵 Large Motor</h4><p>Main drive motor. High torque for movement.</p><div class="motor-spec"><span class="spec-tag">160-170 RPM</span><span class="spec-tag">20 Ncm</span><span class="spec-tag">Port B/C</span></div></div>
+      <div class="motor-card" onclick="selectMotor(1)" id="motor-1"><span class="click-hint">▸ demo</span><h4>🟠 Medium Motor</h4><p>Grippers, arms, steering. Fast response.</p><div class="motor-spec"><span class="spec-tag">240-250 RPM</span><span class="spec-tag">8 Ncm</span><span class="spec-tag">Port A/D</span></div></div>
+      <div class="motor-card" onclick="selectMotor(2)" id="motor-2"><span class="click-hint">▸ demo</span><h4>🔴 Ultrasonic Sensor</h4><p>Detects walls for maze navigation.</p><div class="motor-spec"><span class="spec-tag">3-250 cm</span><span class="spec-tag">Port 4</span><span class="spec-tag">±1 cm</span></div></div>
+      <div class="motor-card" onclick="selectMotor(3)" id="motor-3"><span class="click-hint">▸ demo</span><h4>🟢 Color Sensor</h4><p>Line-following and marker detection.</p><div class="motor-spec"><span class="spec-tag">8 colors</span><span class="spec-tag">Port 3</span><span class="spec-tag">1kHz</span></div></div>
+      <div class="motor-card" onclick="selectMotor(4)" id="motor-4"><span class="click-hint">▸ demo</span><h4>⚫ Gyro Sensor</h4><p>Precise 90° turns at maze corners.</p><div class="motor-spec"><span class="spec-tag">±440°/sec</span><span class="spec-tag">Port 2</span><span class="spec-tag">±3°</span></div></div>
+      <div class="motor-card" onclick="selectMotor(5)" id="motor-5"><span class="click-hint">▸ demo</span><h4>🟡 EV3 Brick</h4><p>The brain. ARM9 processor runs everything.</p><div class="motor-spec"><span class="spec-tag">ARM9 300MHz</span><span class="spec-tag">64MB</span><span class="spec-tag">Linux</span></div></div>
+    </div>
+  </div>
+  <!-- LEARN TAB -->
+  <div id="tab-learn" style="display:none;">
+    <div class="panel-section">
+      <h3>FSE 100 Learning Guide</h3>
+      <div class="info-card"><h4 style="color:var(--accent);">🏗️ Engineering Design Process</h4><p>Define → Research → Brainstorm → Build → Test → Iterate.</p></div>
+      <div class="info-card"><h4 style="color:var(--accent2);">🤖 Maze-Solving Algorithms</h4><p><strong>Wall Follower:</strong> Hug one wall.<br><strong>Pledge:</strong> Wall following + direction counter.<br><strong>Dead-End Fill:</strong> Remember and skip dead ends.</p></div>
+      <div class="info-card"><h4 style="color:var(--accent3);">📐 Key Concepts</h4><p><strong>Gear Ratios:</strong> Speed ↔ torque trade.<br><strong>PID Control:</strong> Smooth turns.<br><strong>Sensor Fusion:</strong> Ultrasonic + gyro + color.</p></div>
+      <div class="info-card"><h4 style="color:#c084fc;">💡 Pro Tips</h4><p>• Calibrate sensors before every run<br>• Consistent wheel base width<br>• Account for battery voltage drop<br>• Test on actual maze surface<br>• Modular code: drive, turn, sense</p></div>
+      <div class="info-card"><h4 style="color:#facc15;">🎯 Grading</h4><p>• Maze completion time • Build quality • Code organization • Teamwork • Presentation</p></div>
+      <div class="info-card"><h4 style="color:#f472b6;">🔗 Resources</h4><p>• education.lego.com<br>• EV3 Classroom App<br>• ev3dev.org — Python<br>• epics.engineering.asu.edu</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom Controls -->
+<div class="bottom-controls" id="bottomControls">
+  <button class="ctrl-btn active" id="playBtn" onclick="toggleRobot()" title="Play/Pause">▶</button>
+  <button class="ctrl-btn" onclick="resetCamera()" title="Reset Camera">🎥</button>
+  <button class="ctrl-btn" onclick="toggleTopView()" title="Top View">⬆</button>
+  <button class="ctrl-btn fpv" id="fpvBtn" onclick="toggleFPV()" title="First-Person View">👁</button>
+  <div class="ctrl-divider"></div>
+  <button class="ctrl-btn" onclick="toggleSpeed()" title="Speed" id="speedBtn">1×</button>
+</div>
+
+<!-- Mode Toggle -->
+<div class="mode-toggle">
+  <button class="mode-btn active-auto" id="autoBtn" onclick="setMode('auto')">🤖 Auto</button>
+  <button class="mode-btn" id="manualBtn" onclick="setMode('manual')">🔧 Manual</button>
+</div>
+
+<!-- HUD -->
+<div class="maze-hud">
+  <div class="hud-row">
+    <div><div class="hud-label">Laps</div><div class="hud-value" id="lapCount">0</div></div>
+    <div><div class="hud-label">Status</div><div class="hud-value" id="robotStatus" style="color:var(--accent);">RUNNING</div></div>
+    <div><div class="hud-label">Mode</div><div class="hud-value" id="modeLabel" style="color:var(--accent);">AUTO</div></div>
+  </div>
+</div>
+
+<div class="motor-demo-label" id="motorDemoLabel" style="opacity:0;"></div>
+
+<div id="canvas-container"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ══════════════════════════════════════════════════
+//  GLOBALS
+// ══════════════════════════════════════════════════
+let scene, camera, renderer, clock;
+let robot, robotRunning = true;
+let pathPoints = [], pathIndex = 0, pathT = 0;
+let speedMultiplier = 1, lapCount = 0;
+let isTopView = false, isFPV = false;
+let isDragging = false, prevMouseX = 0, prevMouseY = 0;
+let camAngleY = 0.5, camAngleX = 0.45, camDist = 55;
+let currentMode = 'auto'; // 'auto' or 'manual'
+
+// Maze data
+const ROWS = 15, COLS = 15;
+const CS = 3; // cell size
+let mazeData = [];
+let mazeWalls = {};   // "r-c" -> mesh
+let mazeGroup;
+let ghostBlock = null;
+let ghostPos = { r: -1, c: -1 };
+const START = { r: 1, c: 1 };
+const END = { r: ROWS - 2, c: COLS - 2 };
+
+// Build + Motor
+let legoGroup, lego3DParts = [], buildStep = 0;
+let motorDemoGroup, motorAnimations = {};
+const LEGO_POS = new THREE.Vector3(-30, 0, 0);
+const MOTOR_POS = new THREE.Vector3(30, 0, 0);
+
+// Raycaster
+let raycaster, mouse;
+let groundPlane;
+
+const legoParts = [
+  { name:"Base Frame",          color:0x475569, h:.35, w:2.6, d:3.4 },
+  { name:"Left Wheel Mount",    color:0x1e40af, h:.4,  w:.7,  d:1.3 },
+  { name:"Right Wheel Mount",   color:0x1e40af, h:.4,  w:.7,  d:1.3 },
+  { name:"Rear Caster",         color:0x64748b, h:.25, w:.9,  d:.9  },
+  { name:"EV3 Brick",           color:0xcc2222, h:.65, w:1.9, d:2.2 },
+  { name:"Ultrasonic Sensor",   color:0x7c3aed, h:.35, w:1.1, d:.7  },
+  { name:"Color Sensor",        color:0x059669, h:.3,  w:.7,  d:.55 },
+  { name:"Bumper Guard",        color:0xea580c, h:.22, w:2.4, d:.45 },
+];
+const legoUIColors=["#475569","#1e40af","#1e40af","#64748b","#b91c1c","#7c3aed","#059669","#ea580c"];
+const legoDescs=["Structural base plate","Large motor + wheel (B)","Large motor + wheel (C)","Ball caster balance","ARM9 brain","Wall detector","Line detector","Cable routing"];
+
+// ══════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0f1520);
+  scene.fog = new THREE.FogExp2(0x0f1520, 0.004);
+
+  camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 400);
+  camera.position.set(5, 35, 55);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.getElementById('canvas-container').appendChild(renderer.domElement);
+  clock = new THREE.Clock();
+
+  raycaster = new THREE.Raycaster();
+  mouse = new THREE.Vector2();
+
+  // Lights
+  scene.add(new THREE.AmbientLight(0x334466, 0.6));
+  const dir = new THREE.DirectionalLight(0xffeedd, 0.8);
+  dir.position.set(20, 35, 15); dir.castShadow = true;
+  dir.shadow.mapSize.set(2048, 2048);
+  dir.shadow.camera.near = .5; dir.shadow.camera.far = 120;
+  dir.shadow.camera.left = -50; dir.shadow.camera.right = 50;
+  dir.shadow.camera.top = 50; dir.shadow.camera.bottom = -50;
+  scene.add(dir);
+
+  [[-30,12,0,0x00e5a0],[30,12,0,0x00b8ff],[0,10,0,0xff6b35],[0,10,-20,0x8844ff],[0,10,20,0xffaa00]].forEach(([x,y,z,c]) => {
+    const l = new THREE.PointLight(c, 0.4, 70); l.position.set(x, y, z); scene.add(l);
+  });
+
+  createGround();
+  generateMaze();
+  buildMaze3D();
+  createRobot();
+  createDecor();
+  recalcPath();
+  initLegoArea();
+  initMotorArea();
+  createGhostBlock();
+
+  // Events
+  const cv = renderer.domElement;
+  cv.addEventListener('mousedown', onMouseDown);
+  cv.addEventListener('mousemove', onMouseMove);
+  cv.addEventListener('mouseup', onMouseUp);
+  cv.addEventListener('wheel', onWheel);
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+  // Touch
+  let tp = {};
+  cv.addEventListener('touchstart', e => { e.preventDefault(); isDragging = true; tp = { x: e.touches[0].clientX, y: e.touches[0].clientY }; prevMouseX = tp.x; prevMouseY = tp.y; }, { passive: false });
+  cv.addEventListener('touchmove', e => { e.preventDefault(); if (!isDragging) return; camAngleY += (e.touches[0].clientX - prevMouseX) * .005; camAngleX = Math.max(.1, Math.min(1.2, camAngleX + (e.touches[0].clientY - prevMouseY) * .005)); prevMouseX = e.touches[0].clientX; prevMouseY = e.touches[0].clientY; isTopView = false; isFPV = false; }, { passive: false });
+  cv.addEventListener('touchend', () => { isDragging = false; document.body.classList.remove('dragging'); });
+
+  setTimeout(() => document.getElementById('loadingScreen').classList.add('hidden'), 2200);
+  animate();
+}
+
+// ══════════════════════════════════════════════════
+//  MAZE GENERATION (Recursive Backtracker → more complex)
+// ══════════════════════════════════════════════════
+function generateMaze() {
+  // Start all walls
+  mazeData = [];
+  for (let r = 0; r < ROWS; r++) {
+    mazeData[r] = [];
+    for (let c = 0; c < COLS; c++) mazeData[r][c] = 1;
+  }
+
+  // Recursive backtracker on odd cells
+  function carve(r, c) {
+    mazeData[r][c] = 0;
+    const dirs = [[0,2],[0,-2],[2,0],[-2,0]].sort(() => Math.random() - 0.5);
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      if (nr > 0 && nr < ROWS - 1 && nc > 0 && nc < COLS - 1 && mazeData[nr][nc] === 1) {
+        mazeData[r + dr / 2][c + dc / 2] = 0;
+        carve(nr, nc);
+      }
+    }
+  }
+  carve(1, 1);
+
+  // Ensure start and end are open
+  mazeData[START.r][START.c] = 0;
+  mazeData[END.r][END.c] = 0;
+
+  // Open a few extra passages to create loops (more interesting)
+  for (let i = 0; i < 15; i++) {
+    const r = 1 + Math.floor(Math.random() * (ROWS - 2));
+    const c = 1 + Math.floor(Math.random() * (COLS - 2));
+    if (mazeData[r][c] === 1) {
+      // Only open if it connects two open cells
+      let openNeighbors = 0;
+      [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr,dc]) => {
+        const nr = r+dr, nc = c+dc;
+        if (nr>=0 && nr<ROWS && nc>=0 && nc<COLS && mazeData[nr][nc]===0) openNeighbors++;
+      });
+      if (openNeighbors >= 2) mazeData[r][c] = 0;
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  3D MAZE
+// ══════════════════════════════════════════════════
+function buildMaze3D() {
+  if (mazeGroup) scene.remove(mazeGroup);
+  mazeGroup = new THREE.Group();
+  mazeWalls = {};
+
+  const H = 1.8;
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x2a4060, roughness: 0.4, metalness: 0.3 });
+  const topMat = new THREE.MeshStandardMaterial({ color: 0x00e5a0, roughness: 0.3, metalness: 0.5, emissive: 0x00e5a0, emissiveIntensity: 0.15 });
+  const ox = -(COLS * CS) / 2 + CS / 2;
+  const oz = -(ROWS * CS) / 2 + CS / 2;
+
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    if (mazeData[r][c] !== 1) continue;
+    addWall3D(r, c, wallMat, topMat, H);
+  }
+
+  // Floor
+  const fl = new THREE.Mesh(
+    new THREE.PlaneGeometry(COLS * CS + 2, ROWS * CS + 2),
+    new THREE.MeshStandardMaterial({ color: 0x0f1a28, roughness: 0.95 })
+  );
+  fl.rotation.x = -Math.PI / 2; fl.position.y = 0.01; fl.receiveShadow = true;
+  fl.name = 'mazeFloor';
+  mazeGroup.add(fl);
+
+  // Start marker
+  const mkG = new THREE.PlaneGeometry(CS - .4, CS - .4);
+  const sm = new THREE.Mesh(mkG, new THREE.MeshStandardMaterial({ color: 0x00e5a0, emissive: 0x00e5a0, emissiveIntensity: 0.5 }));
+  sm.rotation.x = -Math.PI / 2; sm.position.set(START.c * CS + ox, .06, START.r * CS + oz); mazeGroup.add(sm);
+
+  // End marker
+  const em = new THREE.Mesh(mkG.clone(), new THREE.MeshStandardMaterial({ color: 0xff6b35, emissive: 0xff6b35, emissiveIntensity: 0.5 }));
+  em.rotation.x = -Math.PI / 2; em.position.set(END.c * CS + ox, .06, END.r * CS + oz); mazeGroup.add(em);
+
+  scene.add(mazeGroup);
+}
+
+function addWall3D(r, c, wallMat, topMat, H) {
+  if (!wallMat) {
+    wallMat = new THREE.MeshStandardMaterial({ color: 0x2a4060, roughness: 0.4, metalness: 0.3 });
+    topMat = new THREE.MeshStandardMaterial({ color: 0x00e5a0, roughness: 0.3, metalness: 0.5, emissive: 0x00e5a0, emissiveIntensity: 0.15 });
+  }
+  H = H || 1.8;
+  const ox = -(COLS * CS) / 2 + CS / 2;
+  const oz = -(ROWS * CS) / 2 + CS / 2;
+  const x = c * CS + ox, z = r * CS + oz;
+
+  const w = new THREE.Mesh(new THREE.BoxGeometry(CS, H, CS), wallMat);
+  w.position.set(x, H / 2, z); w.castShadow = true; w.receiveShadow = true;
+  w.userData = { row: r, col: c, isWall: true };
+  mazeGroup.add(w);
+
+  const t = new THREE.Mesh(new THREE.BoxGeometry(CS - .1, .08, CS - .1), topMat);
+  t.position.set(x, H + .04, z);
+  t.userData = { topOf: r + '-' + c };
+  mazeGroup.add(t);
+
+  mazeWalls[r + '-' + c] = { wall: w, top: t };
+}
+
+function removeWall3D(r, c) {
+  const key = r + '-' + c;
+  if (mazeWalls[key]) {
+    mazeGroup.remove(mazeWalls[key].wall);
+    mazeGroup.remove(mazeWalls[key].top);
+    delete mazeWalls[key];
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  GHOST BLOCK (editor preview)
+// ══════════════════════════════════════════════════
+function createGhostBlock() {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x00e5a0, transparent: true, opacity: 0.25,
+    emissive: 0x00e5a0, emissiveIntensity: 0.3
+  });
+  ghostBlock = new THREE.Mesh(new THREE.BoxGeometry(CS, 1.8, CS), mat);
+  ghostBlock.position.set(0, 0.9, 0);
+  ghostBlock.visible = false;
+  scene.add(ghostBlock);
+}
+
+function updateGhost(mx, my) {
+  if (currentMode !== 'manual') { ghostBlock.visible = false; return; }
+  mouse.x = (mx / innerWidth) * 2 - 1;
+  mouse.y = -(my / innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+
+  const ox = -(COLS * CS) / 2 + CS / 2;
+  const oz = -(ROWS * CS) / 2 + CS / 2;
+
+  // Intersect with ground plane
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const pt = new THREE.Vector3();
+  raycaster.ray.intersectPlane(plane, pt);
+
+  if (!pt) { ghostBlock.visible = false; return; }
+
+  // Convert world pos to grid
+  const c = Math.round((pt.x - ox) / CS);
+  const r = Math.round((pt.z - oz) / CS);
+
+  if (r < 0 || r >= ROWS || c < 0 || c >= COLS || (r === START.r && c === START.c) || (r === END.r && c === END.c)) {
+    ghostBlock.visible = false;
+    ghostPos = { r: -1, c: -1 };
+    return;
+  }
+
+  ghostPos = { r, c };
+  ghostBlock.position.set(c * CS + ox, 0.9, r * CS + oz);
+
+  if (mazeData[r][c] === 1) {
+    // Would remove wall — show red ghost
+    ghostBlock.material.color.setHex(0xff4444);
+    ghostBlock.material.emissive.setHex(0xff4444);
+    ghostBlock.material.opacity = 0.2;
+  } else {
+    // Would add wall — show green ghost
+    ghostBlock.material.color.setHex(0x00e5a0);
+    ghostBlock.material.emissive.setHex(0x00e5a0);
+    ghostBlock.material.opacity = 0.25;
+  }
+  ghostBlock.visible = true;
+}
+
+// ══════════════════════════════════════════════════
+//  BFS PATHFINDING
+// ══════════════════════════════════════════════════
+function bfsPath(startR, startC, endR, endC) {
+  const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+  const parent = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+  const queue = [[startR, startC]];
+  visited[startR][startC] = true;
+
+  while (queue.length) {
+    const [r, c] = queue.shift();
+    if (r === endR && c === endC) {
+      // Reconstruct
+      const path = [];
+      let cur = [endR, endC];
+      while (cur) {
+        path.unshift(cur);
+        cur = parent[cur[0]][cur[1]];
+      }
+      return path;
+    }
+    for (const [dr, dc] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && !visited[nr][nc] && mazeData[nr][nc] === 0) {
+        visited[nr][nc] = true;
+        parent[nr][nc] = [r, c];
+        queue.push([nr, nc]);
+      }
+    }
+  }
+  return null; // No path
+}
+
+function recalcPath() {
+  const result = bfsPath(START.r, START.c, END.r, END.c);
+  if (!result) {
+    // Try reverse too, and combine for a loop
+    pathPoints = [];
+    document.getElementById('robotStatus').textContent = 'NO PATH';
+    document.getElementById('robotStatus').style.color = '#ff4444';
+    return;
+  }
+
+  const ox = -(COLS * CS) / 2 + CS / 2;
+  const oz = -(ROWS * CS) / 2 + CS / 2;
+  const toWorld = ([r, c]) => new THREE.Vector3(c * CS + ox, 0.5, r * CS + oz);
+
+  // Forward path + reverse for loop
+  const fwd = result.map(toWorld);
+  const rev = [...result].reverse().slice(1).map(toWorld);
+  pathPoints = [...fwd, ...rev];
+  pathIndex = 0;
+  pathT = 0;
+
+  document.getElementById('robotStatus').textContent = robotRunning ? 'RUNNING' : 'PAUSED';
+  document.getElementById('robotStatus').style.color = robotRunning ? 'var(--accent)' : 'var(--accent3)';
+}
+
+// ══════════════════════════════════════════════════
+//  GROUND + ROBOT + DECOR
+// ══════════════════════════════════════════════════
+function createGround() {
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(180, 180), new THREE.MeshStandardMaterial({ color: 0x1a2234, roughness: 0.9 }));
+  g.rotation.x = -Math.PI / 2; g.position.y = -0.01; g.receiveShadow = true; scene.add(g);
+  const gr = new THREE.GridHelper(120, 60, 0x1e3a50, 0x152030); gr.position.y = 0.01; scene.add(gr);
+}
+
+function createRobot() {
+  robot = new THREE.Group();
+  const bM = new THREE.MeshStandardMaterial({ color: 0xee3333, roughness: .3, metalness: .4 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, .55, 1.6), bM); body.position.y = .5; body.castShadow = true; robot.add(body);
+  const brk = new THREE.Mesh(new THREE.BoxGeometry(.8, .28, .55), new THREE.MeshStandardMaterial({ color: 0x333333, roughness: .4, metalness: .5 }));
+  brk.position.set(0, .92, -.12); brk.castShadow = true; robot.add(brk);
+  const scr = new THREE.Mesh(new THREE.PlaneGeometry(.4, .17), new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: .6 }));
+  scr.position.set(0, 1.06, -.12); scr.rotation.x = -.2; robot.add(scr);
+  const wM = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: .8 });
+  const wG = new THREE.CylinderGeometry(.35, .35, .17, 16);
+  [-.7, .7].forEach(x => { const w = new THREE.Mesh(wG, wM); w.rotation.z = Math.PI / 2; w.position.set(x, .35, .2); w.castShadow = true; robot.add(w); });
+  const caster = new THREE.Mesh(new THREE.SphereGeometry(.14, 12, 12), wM); caster.position.set(0, .14, -.6); robot.add(caster);
+  const sM = new THREE.MeshStandardMaterial({ color: 0x6633cc, roughness: .3, metalness: .4, emissive: 0x6633cc, emissiveIntensity: .2 });
+  const sens = new THREE.Mesh(new THREE.BoxGeometry(.55, .22, .22), sM); sens.position.set(0, .6, .9); sens.castShadow = true; robot.add(sens);
+  const eM = new THREE.MeshStandardMaterial({ color: 0x00b8ff, emissive: 0x00b8ff, emissiveIntensity: .8 });
+  const eG = new THREE.CylinderGeometry(.07, .07, .06, 12);
+  [-.12, .12].forEach(x => { const e = new THREE.Mesh(eG, eM); e.rotation.x = Math.PI / 2; e.position.set(x, .6, 1.01); robot.add(e); });
+  const beam = new THREE.Mesh(new THREE.ConeGeometry(.35, 2.5, 8), new THREE.MeshBasicMaterial({ color: 0x00b8ff, transparent: true, opacity: .06 }));
+  beam.rotation.x = Math.PI / 2; beam.position.set(0, .6, 2.2); robot.add(beam);
+  robot.scale.set(.8, .8, .8);
+  scene.add(robot);
+}
+
+function createDecor() {
+  const pG = new THREE.BufferGeometry(); const pos = new Float32Array(400 * 3);
+  for (let i = 0; i < 400; i++) { pos[i*3]=(Math.random()-.5)*120; pos[i*3+1]=Math.random()*30+3; pos[i*3+2]=(Math.random()-.5)*120; }
+  pG.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(pG, new THREE.PointsMaterial({ color: 0x00e5a0, size: .08, transparent: true, opacity: .5 })));
+
+  [[-35,0,-30],[35,0,-30],[-35,0,30],[35,0,30],[-35,0,0],[35,0,0]].forEach(([x,y,z]) => {
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(.18, .24, 9, 8), new THREE.MeshStandardMaterial({ color: 0x1a3050, roughness: .3, metalness: .6 }));
+    p.position.set(x, 4.5, z); p.castShadow = true; scene.add(p);
+    const g = new THREE.Mesh(new THREE.SphereGeometry(.3, 12, 12), new THREE.MeshStandardMaterial({ color: 0x00e5a0, emissive: 0x00e5a0, emissiveIntensity: .8, transparent: true, opacity: .7 }));
+    g.position.set(x, 9.2, z); scene.add(g);
+  });
+
+  const cols = [0xe53935, 0x1e88e5, 0xfdd835, 0x43a047, 0xff8f00];
+  for (let i = 0; i < 30; i++) {
+    const a = Math.random() * Math.PI * 2, d = 30 + Math.random() * 18;
+    const x = Math.cos(a) * d, z = Math.sin(a) * d;
+    const mat = new THREE.MeshStandardMaterial({ color: cols[~~(Math.random() * cols.length)], roughness: .5, metalness: .2 });
+    const b = new THREE.Mesh(new THREE.BoxGeometry(.9, .45, .55), mat); b.position.set(x, .22, z); b.rotation.y = Math.random() * Math.PI; b.castShadow = true; scene.add(b);
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  LEGO + MOTOR AREA (same as before, repositioned)
+// ══════════════════════════════════════════════════
+function initLegoArea() {
+  legoGroup = new THREE.Group(); legoGroup.position.copy(LEGO_POS); scene.add(legoGroup);
+  const pl = new THREE.Mesh(new THREE.CylinderGeometry(4, 4.5, .3, 32), new THREE.MeshStandardMaterial({ color: 0x1a2e44, roughness: .5, metalness: .3 }));
+  pl.position.y = .15; pl.receiveShadow = true; legoGroup.add(pl);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(4.3, 4.6, 64), new THREE.MeshBasicMaterial({ color: 0x00e5a0, transparent: true, opacity: .25, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = .32; legoGroup.add(ring);
+  makeLabel("🧱 LEGO BUILD", 0x00e5a0, legoGroup, 0, 6.5, 0);
+}
+function initMotorArea() {
+  motorDemoGroup = new THREE.Group(); motorDemoGroup.position.copy(MOTOR_POS); scene.add(motorDemoGroup);
+  const pl = new THREE.Mesh(new THREE.CylinderGeometry(4, 4.5, .3, 32), new THREE.MeshStandardMaterial({ color: 0x1a2844, roughness: .5, metalness: .3 }));
+  pl.position.y = .15; pl.receiveShadow = true; motorDemoGroup.add(pl);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(4.3, 4.6, 64), new THREE.MeshBasicMaterial({ color: 0x00b8ff, transparent: true, opacity: .25, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = .32; motorDemoGroup.add(ring);
+  makeLabel("⚙️ MOTOR DEMO", 0x00b8ff, motorDemoGroup, 0, 6.5, 0);
+}
+
+function getStackY() { let h = 0; for (let i = 0; i < buildStep; i++) h += legoParts[i].h + .06; return h; }
+
+function add3DLegoPiece(idx) {
+  const p = legoParts[idx]; const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: p.color, roughness: .45, metalness: .2 });
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(p.w, p.h, p.d), mat); mesh.castShadow = true; mesh.receiveShadow = true; g.add(mesh);
+  const sR = Math.max(1, Math.floor(p.d / .8)), sC = Math.max(1, Math.floor(p.w / .8));
+  const sG = new THREE.CylinderGeometry(.1, .1, .1, 10);
+  const sM = new THREE.MeshStandardMaterial({ color: p.color, roughness: .35, metalness: .3 });
+  for (let r = 0; r < sR; r++) for (let c = 0; c < sC; c++) { const s = new THREE.Mesh(sG, sM); s.position.set(-((sC-1)*.55)/2+c*.55, p.h/2+.05, -((sR-1)*.55)/2+r*.55); s.castShadow = true; g.add(s); }
+  if (idx===1||idx===2) { const w=new THREE.Mesh(new THREE.CylinderGeometry(.4,.4,.2,16),new THREE.MeshStandardMaterial({color:0x111111,roughness:.85})); w.rotation.z=Math.PI/2; w.position.set(idx===1?-p.w/2-.15:p.w/2+.15,0,0); w.castShadow=true; g.add(w); }
+  if (idx===4) { const sc=new THREE.Mesh(new THREE.PlaneGeometry(.8,.4),new THREE.MeshStandardMaterial({color:0x00ff88,emissive:0x00ff88,emissiveIntensity:.5})); sc.position.set(0,p.h/2+.01,p.d/2+.01); g.add(sc); }
+  if (idx===5) { [-.2,.2].forEach(x=>{const e=new THREE.Mesh(new THREE.CylinderGeometry(.1,.1,.08,12),new THREE.MeshStandardMaterial({color:0x00b8ff,emissive:0x00b8ff,emissiveIntensity:.8})); e.rotation.x=Math.PI/2; e.position.set(x,0,p.d/2+.04); g.add(e);}); }
+  if (idx===6) { const li=new THREE.Mesh(new THREE.SphereGeometry(.1,12,12),new THREE.MeshStandardMaterial({color:0x00ff55,emissive:0x00ff55,emissiveIntensity:1})); li.position.set(0,-p.h/2-.05,0); g.add(li); }
+  const targetY = .3 + getStackY() + p.h / 2;
+  g.position.set(0, targetY + 8, 0);
+  const st = performance.now();
+  (function drop() { const el=(performance.now()-st)/1000; const t=Math.min(1,el/.45); g.position.y=(targetY+8)+(targetY-(targetY+8))*(1-Math.pow(1-t,3)); if(t>=1){const bT=Math.min(1,(el-.45)/.2); g.position.y=targetY+Math.sin(bT*Math.PI)*.12*(1-bT); if(bT>=1){g.position.y=targetY;return;}} requestAnimationFrame(drop); })();
+  legoGroup.add(g); lego3DParts.push(g);
+}
+function remove3DLego() { lego3DParts.forEach(p => legoGroup.remove(p)); lego3DParts = []; }
+
+// Motor demos (condensed)
+function clearMotorDemo() { while (motorDemoGroup.children.length > 3) motorDemoGroup.remove(motorDemoGroup.children[motorDemoGroup.children.length - 1]); motorAnimations = {}; }
+function mk(parent, geo, matOpts, x, y, z, shadow) { const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial(matOpts)); if (x !== undefined) m.position.set(x, y||0, z||0); if (shadow) m.castShadow = true; parent.add(m); return m; }
+
+function selectMotor(i) {
+  document.querySelectorAll('.motor-card').forEach((c, j) => c.classList.toggle('selected', j === i));
+  clearMotorDemo(); const g = new THREE.Group(); g.position.set(0, 2, 0);
+  const demos = {
+    0: () => { // Large motor
+      mk(g,new THREE.BoxGeometry(1.2,1.2,1.5),{color:0x1e40af,roughness:.35,metalness:.3},0,0,0,true);
+      const wheel=mk(g,new THREE.CylinderGeometry(.7,.7,.3,24),{color:0x222222,roughness:.8},2.2,0,0,true); wheel.rotation.z=Math.PI/2;
+      const arrow=mk(g,new THREE.TorusGeometry(.95,.04,8,32,Math.PI*1.5),{color:0x00e5a0,emissive:0x00e5a0,emissiveIntensity:.6},2.2,0,0); arrow.rotation.y=Math.PI/2;
+      motorAnimations.update=t=>{wheel.rotation.x=t*2;arrow.rotation.x=t*2;};
+      showDemoLabel("Large Motor — 160 RPM, 20 Ncm. Spins drive wheels.");
+    },
+    1: () => { // Medium motor
+      mk(g,new THREE.BoxGeometry(.8,.8,1),{color:0xea580c,roughness:.35,metalness:.3},0,0,0,true);
+      const clL=mk(g,new THREE.BoxGeometry(.4,.15,.6),{color:0xea580c,roughness:.4},-.3,0,2.5);
+      const clR=mk(g,new THREE.BoxGeometry(.4,.15,.6),{color:0xea580c,roughness:.4},.3,0,2.5);
+      mk(g,new THREE.BoxGeometry(.35,.35,.35),{color:0xfdd835,emissive:0xfdd835,emissiveIntensity:.15},0,0,2.5,true);
+      motorAnimations.update=t=>{const v=(Math.sin(t*1.5)+1)/2;clL.position.x=-.15-v*.35;clR.position.x=.15+v*.35;};
+      showDemoLabel("Medium Motor — 240 RPM, 8 Ncm. Controls grippers.");
+    },
+    2: () => { // Ultrasonic
+      mk(g,new THREE.BoxGeometry(1.2,.6,.6),{color:0x7c3aed,roughness:.3,metalness:.4},0,0,0,true);
+      const rings=[];for(let i=0;i<5;i++){rings.push(mk(g,new THREE.RingGeometry(.2+i*.4,.25+i*.4,32),{color:0x00b8ff,transparent:true,opacity:.4,side:THREE.DoubleSide},0,0,.8+i*.8));}
+      mk(g,new THREE.BoxGeometry(2.5,2,.4),{color:0x2a4060,roughness:.4,metalness:.3},0,.4,5,true);
+      motorAnimations.update=t=>{rings.forEach((r,i)=>{const ph=(t*2+i*.3)%2;r.scale.set(1+ph*.3,1+ph*.3,1);r.material.opacity=Math.max(0,.5-ph*.25);r.position.z=.8+i*.8+ph*.5;});};
+      showDemoLabel("Ultrasonic — Sound waves detect walls 3-250 cm.");
+    },
+    3: () => { // Color sensor
+      const sBody=mk(g,new THREE.BoxGeometry(.8,.5,.5),{color:0x059669,roughness:.3,metalness:.4},0,1,0,true);
+      const beam=mk(g,new THREE.ConeGeometry(.5,1,12),{color:0x00ff55,transparent:true,opacity:.15},0,.4,0);
+      const colors=[0xff0000,0x00ff00,0x0000ff,0xffff00,0xff00ff,0x00ffff,0xff8800,0xffffff];
+      const sW=colors.length*.7; colors.forEach((c,i)=>mk(g,new THREE.BoxGeometry(.65,.08,1.5),{color:c,emissive:c,emissiveIntensity:.15},-sW/2+.35+i*.7,-.04,0));
+      motorAnimations.update=t=>{const idx=~~((t*.8)%colors.length);const x=-sW/2+.35+idx*.7;sBody.position.x=x;beam.position.x=x;beam.material.color.setHex(colors[idx]);};
+      showDemoLabel("Color Sensor — Detects 8 colors for line-following.");
+    },
+    4: () => { // Gyro
+      mk(g,new THREE.BoxGeometry(1,.6,.8),{color:0x444444,roughness:.3,metalness:.5},0,0,0,true);
+      const r1=mk(g,new THREE.TorusGeometry(.8,.04,8,32),{color:0xff4444,emissive:0xff4444,emissiveIntensity:.4});
+      const r2=mk(g,new THREE.TorusGeometry(.65,.04,8,32),{color:0x4444ff,emissive:0x4444ff,emissiveIntensity:.4});
+      const r3=mk(g,new THREE.TorusGeometry(.5,.04,8,32),{color:0x44ff44,emissive:0x44ff44,emissiveIntensity:.4});
+      motorAnimations.update=t=>{r1.rotation.x=t*3;r2.rotation.y=t*2;r3.rotation.z=t*4;};
+      showDemoLabel("Gyro — ±440°/sec rotation for precise turns.");
+    },
+    5: () => { // EV3 Brick
+      mk(g,new THREE.BoxGeometry(2.4,1.2,1.5),{color:0x333333,roughness:.35,metalness:.4},0,0,0,true);
+      const screen=mk(g,new THREE.PlaneGeometry(1.4,.6),{color:0x00ff88,emissive:0x00ff88,emissiveIntensity:.5},0,.15,.76);
+      const flows=[];for(let i=0;i<4;i++){flows.push(mk(g,new THREE.BoxGeometry(.03,.5,.03),{color:0x00e5a0,transparent:true,opacity:.6},-.6+i*.4,1.1,0));}
+      motorAnimations.update=t=>{screen.material.emissiveIntensity=.3+Math.sin(t*3)*.2;flows.forEach((f,i)=>{f.scale.y=.5+(Math.sin(t*4+i)+1)/2;f.material.opacity=.3+((Math.sin(t*4+i)+1)/2)*.5;});};
+      showDemoLabel("EV3 Brick — ARM9 brain runs your maze program.");
+    }
+  };
+  demos[i](); motorDemoGroup.add(g);
+  camAngleY = -.6; camDist = 40; isTopView = false; isFPV = false;
+}
+
+function showDemoLabel(t) { const el=document.getElementById('motorDemoLabel'); el.textContent=t; el.style.opacity='1'; clearTimeout(el._t); el._t=setTimeout(()=>el.style.opacity='0',8000); }
+function makeLabel(text, color, parent, x, y, z) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 96;
+  const ctx = c.getContext('2d'); ctx.font = 'bold 34px Fredoka,sans-serif';
+  ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 256, 48);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true }));
+  sp.position.set(x, y, z); sp.scale.set(7, 1.5, 1); parent.add(sp);
+}
+
+// ══════════════════════════════════════════════════
+//  INPUT HANDLERS
+// ══════════════════════════════════════════════════
+function onMouseDown(e) {
+  // In manual mode, left-click places/removes wall
+  if (currentMode === 'manual' && e.button === 0 && !e.ctrlKey) {
+    if (ghostPos.r >= 0 && ghostPos.c >= 0) {
+      const { r, c } = ghostPos;
+      if (r === START.r && c === START.c) return;
+      if (r === END.r && c === END.c) return;
+      if (mazeData[r][c] === 0) {
+        // Place wall
+        mazeData[r][c] = 1;
+        addWall3D(r, c);
+      } else {
+        // Remove wall (not border)
+        if (r === 0 || r === ROWS - 1 || c === 0 || c === COLS - 1) return;
+        mazeData[r][c] = 0;
+        removeWall3D(r, c);
+      }
+      recalcPath();
+      return;
+    }
+  }
+
+  // Right-click or middle-click or ctrl+left-click → orbit
+  if (e.button === 1 || e.button === 2 || (e.button === 0 && e.ctrlKey) || currentMode === 'auto') {
+    isDragging = true;
+    prevMouseX = e.clientX;
+    prevMouseY = e.clientY;
+    document.body.classList.add('dragging');
+  }
+}
+
+function onMouseMove(e) {
+  // Update ghost in manual mode
+  if (currentMode === 'manual') updateGhost(e.clientX, e.clientY);
+
+  if (!isDragging) return;
+  camAngleY += (e.clientX - prevMouseX) * .005;
+  camAngleX = Math.max(.1, Math.min(1.2, camAngleX + (e.clientY - prevMouseY) * .005));
+  prevMouseX = e.clientX; prevMouseY = e.clientY;
+  isTopView = false; isFPV = false;
+  document.getElementById('fpvBtn').classList.remove('active');
+}
+
+function onMouseUp() {
+  isDragging = false;
+  document.body.classList.remove('dragging');
+}
+
+function onWheel(e) {
+  camDist = Math.max(15, Math.min(80, camDist + e.deltaY * 0.03));
+  isTopView = false;
+  if (isFPV) { isFPV = false; document.getElementById('fpvBtn').classList.remove('active'); }
+}
+
+function onKeyDown(e) {
+  if (currentMode !== 'manual') return;
+  if (e.key === 'r' || e.key === 'R') recalcPath();
+  if (e.key === 'c' || e.key === 'C') {
+    // Clear all non-border walls
+    for (let r = 1; r < ROWS - 1; r++) for (let c = 1; c < COLS - 1; c++) {
+      if (mazeData[r][c] === 1) { mazeData[r][c] = 0; removeWall3D(r, c); }
+    }
+    recalcPath();
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  ANIMATION LOOP
+// ══════════════════════════════════════════════════
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta(), time = clock.getElapsedTime();
+
+  // Robot movement
+  if (robotRunning && pathPoints.length > 1) {
+    pathT += delta * 0.7 * speedMultiplier;
+    if (pathT >= 1) {
+      pathT = 0; pathIndex++;
+      if (pathIndex >= pathPoints.length - 1) { pathIndex = 0; lapCount++; document.getElementById('lapCount').textContent = lapCount; }
+    }
+    const cur = pathPoints[pathIndex], nxt = pathPoints[(pathIndex + 1) % pathPoints.length];
+    robot.position.lerpVectors(cur, nxt, pathT);
+    const d = new THREE.Vector3().subVectors(nxt, cur);
+    if (d.length() > .01) robot.rotation.y = Math.atan2(d.x, d.z);
+  }
+  if (robot) robot.position.y = .5 + Math.sin(time * 3) * .03;
+
+  // Platforms gentle spin
+  if (legoGroup) legoGroup.rotation.y = Math.sin(time * .3) * .1;
+  if (motorDemoGroup) motorDemoGroup.rotation.y = Math.sin(time * .25 + 1) * .08;
+  if (motorAnimations.update) motorAnimations.update(time);
+
+  // Ghost block pulse
+  if (ghostBlock && ghostBlock.visible) {
+    ghostBlock.material.opacity = 0.15 + Math.sin(time * 4) * 0.1;
+  }
+
+  // Camera
+  if (isFPV && robot) {
+    // First-person: behind and above the robot
+    const behind = new THREE.Vector3(0, 0, -3.5);
+    behind.applyAxisAngle(new THREE.Vector3(0, 1, 0), robot.rotation.y);
+    const targetPos = robot.position.clone().add(behind);
+    targetPos.y = robot.position.y + 2.5;
+
+    camera.position.x += (targetPos.x - camera.position.x) * .08;
+    camera.position.y += (targetPos.y - camera.position.y) * .08;
+    camera.position.z += (targetPos.z - camera.position.z) * .08;
+
+    const lookAhead = new THREE.Vector3(0, 0, 4);
+    lookAhead.applyAxisAngle(new THREE.Vector3(0, 1, 0), robot.rotation.y);
+    const lookTarget = robot.position.clone().add(lookAhead);
+    lookTarget.y = robot.position.y + 0.5;
+    camera.lookAt(lookTarget);
+  } else if (isTopView) {
+    camera.position.x += (0 - camera.position.x) * .05;
+    camera.position.y += (60 - camera.position.y) * .05;
+    camera.position.z += (.1 - camera.position.z) * .05;
+    camera.lookAt(0, 0, 0);
+  } else {
+    const cx = Math.sin(camAngleY) * camDist, cz = Math.cos(camAngleY) * camDist, cy = camDist * Math.sin(camAngleX);
+    camera.position.x += (cx - camera.position.x) * .05;
+    camera.position.y += (cy - camera.position.y) * .05;
+    camera.position.z += (cz - camera.position.z) * .05;
+    camera.lookAt(0, 0, 0);
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ══════════════════════════════════════════════════
+//  UI CONTROLS
+// ══════════════════════════════════════════════════
+function toggleRobot() {
+  robotRunning = !robotRunning;
+  document.getElementById('playBtn').textContent = robotRunning ? '⏸' : '▶';
+  document.getElementById('playBtn').classList.toggle('active', robotRunning);
+  document.getElementById('robotStatus').textContent = robotRunning ? 'RUNNING' : 'PAUSED';
+  document.getElementById('robotStatus').style.color = robotRunning ? 'var(--accent)' : 'var(--accent3)';
+}
+function resetCamera() { camAngleY = .5; camAngleX = .45; camDist = 55; isTopView = false; isFPV = false; document.getElementById('fpvBtn').classList.remove('active'); }
+function toggleTopView() { isTopView = !isTopView; isFPV = false; document.getElementById('fpvBtn').classList.remove('active'); }
+function toggleFPV() {
+  isFPV = !isFPV; isTopView = false;
+  document.getElementById('fpvBtn').classList.toggle('active', isFPV);
+}
+function toggleSpeed() { const s=[.5,1,2,3],l=['0.5×','1×','2×','3×']; let i=s.indexOf(speedMultiplier); i=(i+1)%s.length; speedMultiplier=s[i]; document.getElementById('speedBtn').textContent=l[i]; }
+
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('autoBtn').className = 'mode-btn' + (mode === 'auto' ? ' active-auto' : '');
+  document.getElementById('manualBtn').className = 'mode-btn' + (mode === 'manual' ? ' active-manual' : '');
+  document.getElementById('modeLabel').textContent = mode.toUpperCase();
+  document.getElementById('modeLabel').style.color = mode === 'auto' ? 'var(--accent)' : 'var(--accent3)';
+  document.getElementById('editorHud').style.opacity = mode === 'manual' ? '1' : '0';
+  document.getElementById('editorHud').style.pointerEvents = mode === 'manual' ? 'auto' : 'none';
+  if (mode === 'auto') { ghostBlock.visible = false; }
+}
+
+function showPanel(tab) {
+  document.getElementById('sidePanel').classList.remove('hidden');
+  document.getElementById('toggleBtn').style.display = 'none';
+  ['build','motors','learn'].forEach(t => document.getElementById('tab-'+t).style.display = t===tab ? 'block' : 'none');
+  document.querySelectorAll('.nav-btn').forEach((b,i) => b.classList.toggle('active', i === ['build','motors','learn'].indexOf(tab)));
+  if (tab === 'build') { camAngleY = .8; camDist = 45; isTopView = false; isFPV = false; }
+  if (tab === 'motors') { camAngleY = -.5; camDist = 45; isTopView = false; isFPV = false; }
+}
+function togglePanel() { const p = document.getElementById('sidePanel'); p.classList.toggle('hidden'); document.getElementById('toggleBtn').style.display = p.classList.contains('hidden') ? 'flex' : 'none'; }
+
+function addLegoPiece() {
+  if (buildStep >= legoParts.length) return;
+  add3DLegoPiece(buildStep);
+  const stack = document.getElementById('legoStack');
+  if (buildStep === 0) stack.innerHTML = '';
+  const piece = document.createElement('div'); piece.className = 'lego-piece'; piece.style.background = legoUIColors[buildStep];
+  piece.innerHTML = `${legoParts[buildStep].name}<br><span style="font-size:9px;opacity:.7;font-weight:400;">${legoDescs[buildStep]}</span>`;
+  stack.appendChild(piece); buildStep++;
+  document.getElementById('stepIndicator').textContent = `Step ${buildStep} / ${legoParts.length}`;
+  if (buildStep >= legoParts.length) { document.getElementById('buildBtn').disabled = true; document.getElementById('buildBtn').textContent = '✅ Complete!'; }
+}
+function resetBuild() {
+  buildStep = 0; remove3DLego();
+  document.getElementById('legoStack').innerHTML = '<div style="color:var(--text-dim);font-size:10px;position:absolute;top:50%;transform:translateY(-50%);text-align:center;padding:0 8px;">Press "Add Next Piece" to start</div>';
+  document.getElementById('stepIndicator').textContent = 'Step 0 / 8';
+  document.getElementById('buildBtn').disabled = false; document.getElementById('buildBtn').textContent = '🧱 Add Next Piece';
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
